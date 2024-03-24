@@ -1,0 +1,3 @@
+class Constraint:
+    pass
+
