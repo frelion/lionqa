@@ -2,7 +2,12 @@ from typing import Optional, Callable, Sequence, Generator, Any
 
 
 class Expr:
-    """核心类，用于构建计算逻辑"""
+    """
+    核心类，用于构建计算逻辑
+
+    每一个Expr为一个节点
+    多个Expr节点构成的计算图仅可计算一次
+    """
 
     __slots__ = ["pre", "func", "_collected", "_value"]
 
@@ -22,6 +27,7 @@ class Expr:
                 raise ValueError("数据源尚未定义")
             self._value = self.func(*(pre._collect() for pre in self.pre))
             self._collected = True
+            self.func = self.pre = None  # gc
         return self._value
 
     def clone(self, clonespace: dict) -> "Expr":
