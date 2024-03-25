@@ -1,12 +1,9 @@
 from abc import ABC, abstractmethod
 
 
-class Partition:
+class Partition(ABC):
     @abstractmethod
-    def __contains__(self, other) -> bool:
-        ...
-    
-    @abstractmethod
-    def get(self, index) -> bool:
-        ...
+    def __contains__(self, other) -> bool: ...
 
+    @abstractmethod
+    def __getitem__(self, index) -> bool: ...
