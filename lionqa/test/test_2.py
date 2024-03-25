@@ -1,8 +1,8 @@
-import lionqa
+from lionqa import QAFrame, Column
 
 
-class MyData(lionqa.QAFrame):
-    a: int = lionqa.Column()
+class MyData(QAFrame):
+    a: int = Column(constraints=[])
 
     @classmethod
     def read(cls, partition):

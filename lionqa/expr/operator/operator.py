@@ -75,8 +75,8 @@ def __invert__(x: Any) -> Any:
     return ~x
 
 
-@make_method
-def __check__(x: Any) -> bool:
-    if isinstance(x, pd.Series) or isinstance(x, pd.DataFrame):
-        return x.all()
-    return bool(x)
+# @make_method
+# def __check__(x: Any) -> bool:
+#     if isinstance(x, pd.Series) or isinstance(x, pd.DataFrame):
+#         return x.all()
+#     return bool(x)

@@ -13,14 +13,25 @@ class Column(Expr):
         self,
         column_name: Optional[str] = None,
         frame_name: Optional[str] = None,
-        constraints: Optional[List] = None,
+        constraints: Optional[
+            List["lionqa.Constraint"]
+        ] = None,  # column不对其进行检测。其作用仅是向frame提供信息
     ) -> None:
         self.frame_name = frame_name
         self.column_name = column_name
-        self.constraints = constraints
+        self.constraints = constraints or list()
+        for cons in self.constraints:
+            if not isinstance(cons, lionqa.Constraint):
+                raise TypeError(f"{self}'s constraints {cons} is not Constraint type")
         super().__init__()
 
-    def set(self, frame: "lionqa.Frame"):
+    def _clone(self, clonespace: dict) -> "Column":
+        _new = Column(self.column_name, self.frame_name, self.constraints)
+        _new.func = self.func
+        _new.pre = tuple(pre.clone(clonespace) for pre in self.pre)
+        return _new
+
+    def _bind(self, frame: "lionqa.Frame"):
         name = ""
         if self.frame_name is not None:
             name += self.frame_name + "."
@@ -29,11 +40,3 @@ class Column(Expr):
         name += self.column_name
         self.func = lambda series: series
         self.pre = (frame[name],)
-
-    def clone(self, clonespace: dict):
-        if id(self) not in clonespace:
-            _new = Column(self.column_name, self.frame_name)
-            _new.func = self.func
-            _new.pre = tuple(pre.clone(clonespace) for pre in self.pre)
-            clonespace[id(self)] = _new
-        return clonespace[id(self)]

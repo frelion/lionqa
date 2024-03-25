@@ -1,4 +1,15 @@
-from typing import Optional, Callable, Sequence, Generator, Any
+import inspect
+from typing import Optional, Callable, Sequence, Callable, Any
+
+import lionqa
+
+
+def get_signature(func: Callable):
+    return (
+        func.__name__,
+        inspect.signature(func).parameters,
+        inspect.signature(func).return_annotation,
+    )
 
 
 class Expr:
@@ -10,6 +21,41 @@ class Expr:
     """
 
     __slots__ = ["pre", "func", "_collected", "_value"]
+
+    def __init_subclass__(cls, **kwargs) -> None:
+        """仅对直接继承的类进行检查"""
+        if Expr not in cls.__bases__:
+            return
+        if cls._clone is Expr._clone:
+            raise NotImplementedError(f"class {cls} must implement '_clone' method")
+        _, params, return_annotation = get_signature(cls._clone)
+        if list(params) != ["self", "clonespace"] or (
+            return_annotation is not cls and return_annotation != cls.__name__
+        ):
+            raise NotImplementedError(
+                "\n".join(
+                    (
+                        f"class {cls}'s method '_clone' must be an instance method, ",
+                        "and the parameters must be ['self', 'clonespace'] where clonespace is a dict used for cache, ",
+                        f"and the return type must be {cls} (please write return type annotation)",
+                    )
+                )
+            )
+        if cls._bind is Expr._bind:
+            raise NotImplementedError(f"class {cls} must implement '_bind' method")
+        _, params, return_annotation = get_signature(cls._bind)
+        if list(params) != ["self", "frame"] or (
+            return_annotation is not None and return_annotation is not inspect._empty
+        ):
+            raise NotImplementedError(
+                "\n".join(
+                    (
+                        f"class {cls}'s method '_bind' must be an instance method, ",
+                        "and the parameters must be ['self', 'frame'] where frame is a lionqa.Frame used for suppling data source, ",
+                        f"and the return type must be None",
+                    )
+                )
+            )
 
     def __init__(
         self,
@@ -30,22 +76,29 @@ class Expr:
             self.func = self.pre = None  # gc
         return self._value
 
-    def clone(self, clonespace: dict) -> "Expr":
-        if id(self) not in clonespace:
-            clonespace[id(self)] = Expr(
-                self.func, tuple(pre.clone(clonespace) for pre in self.pre)
-            )
-        return clonespace[id(self)]
+    def _clone(self, clonespace: dict) -> "Expr":
+        return Expr(
+            self.func,
+            tuple(pre.clone(clonespace) for pre in self.pre),
+        )
+
+    def _bind(self, frame: "lionqa.Frame"):
+        pass
 
     def collect(self) -> Any:
-        expr = self.clone(dict())
+        expr = self.clone()  # 避免对自己造成修改
         return expr._collect()
 
-    def roots(self) -> Generator["Expr", None, None]:
-        if not self.pre:
-            yield self
-        for pre in self.pre:
-            yield from pre.roots()
+    def clone(self, clonespace: Optional[dict] = None) -> "Expr":
+        if clonespace is None:
+            clonespace = dict()
+        if id(self) not in clonespace:
+            clonespace[id(self)] = self._clone(clonespace)
+        return clonespace[id(self)]
 
-    def check(self) -> bool:
-        return self.__check__().collect()
+    def bind(self, frame: "lionqa.Frame"):
+        """绑定数据源"""
+        if len(self.pre) == 0 and self.func is None:  # 如果是根节点并尚未绑定数据源
+            self._bind(frame)
+        for pre in self.pre:
+            pre.bind(frame)
