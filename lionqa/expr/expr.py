@@ -100,5 +100,10 @@ class Expr:
         """绑定数据源"""
         if len(self.pre) == 0 and self.func is None:  # 如果是根节点并尚未绑定数据源
             self._bind(frame)
-        for pre in self.pre:
-            pre.bind(frame)
+        else:
+            for pre in self.pre:
+                pre.bind(frame)
+
+    def unbind(self):
+        self.func = None
+        self.pre = tuple()

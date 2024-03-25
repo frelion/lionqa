@@ -32,11 +32,7 @@ class Column(Expr):
         return _new
 
     def _bind(self, frame: "lionqa.Frame"):
-        name = ""
-        if self.frame_name is not None:
-            name += self.frame_name + "."
         if self.column_name is None:
             raise ValueError("The column is undefined")
-        name += self.column_name
         self.func = lambda series: series
-        self.pre = (frame[name],)
+        self.pre = (frame[(self.frame_name, self.column_name)],)
