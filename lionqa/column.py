@@ -37,5 +37,3 @@ class Column(Expr):
         self.func = lambda series: series
         self.pre = (frame[(self.frame_name, self.column_name)],)
 
-    def unique(self):
-        
