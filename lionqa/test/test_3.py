@@ -12,8 +12,12 @@ class MyData2(QAFrame):
     b: int = Column()
 
     @classmethod
-    def read(cls, partition):
+    def read(cls, index):
         return df
+
+    @classmethod
+    def read_offset(cls, anchor, offset):
+        raise NotImplementedError()
 
 
 def test_qa_frame():

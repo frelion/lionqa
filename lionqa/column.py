@@ -36,3 +36,6 @@ class Column(Expr):
             raise ValueError("The column is undefined")
         self.func = lambda series: series
         self.pre = (frame[(self.frame_name, self.column_name)],)
+
+    def unique(self):
+        

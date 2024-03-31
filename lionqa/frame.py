@@ -1,33 +1,40 @@
+import datetime as dt
 from types import SimpleNamespace
 from abc import ABC, abstractmethod
-from typing import Literal, Any, Optional, Union, Tuple, List
+from typing import Literal, Any, Optional, Union, Tuple, Optional
 
 import pandas as pd
+from multimethod import multimethod
 
 import lionqa
 from lionqa.expr import Expr, make
 from lionqa.column import Column
 from lionqa.constraint import Constraint
-from lionqa.partition import Partition, DefaultPartition
 
 
 class Frame(Expr):
     """数据帧的抽象"""
 
-    def __init__(self, *args, columns: Optional[List[Column]] = None, **kwargs) -> None:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame) and len(kwargs) == 0:
-            super().__init__(func=lambda df: df, pre=(make(args[0]),))
-            columns = [Column(col) for col in args[0].columns]
-        else:
-            super().__init__(*args, **kwargs)
-            columns = columns or list()
+    @multimethod
+    def __init__(self, df: pd.DataFrame) -> None:
+        super().__init__(func=lambda df: df, pre=(make(df),))
+        self.__columns__ = [Column(col) for col in df.columns]
+        self.__set_columns__()
+    
+    @multimethod
+    def __init__(self, func, pre=tuple(), columns=None):
+        super().__init__(pre=pre, func=func)
+        self.__columns__ = columns or list()
+        self.__set_columns__()
+
+    def __set_columns__(self):
         _column_name_count = dict()
-        for col in columns:
+        for col in self.__columns__:
             col.bind(self)
             _column_name_count[col.column_name] = (
                 _column_name_count.get(col.column_name, 0) + 1
             )
-        for col in columns:
+        for col in self.__columns__:
             if col.frame_name is None:
                 if hasattr(self, col.column_name):
                     raise ValueError(f"{col.column_name} duplicate column")
@@ -42,7 +49,6 @@ class Frame(Expr):
                 setattr(getattr(self, col.frame_name), col.column_name, col)
                 if _column_name_count[col.column_name] == 1:
                     setattr(self, col.column_name, col)
-        self.__columns__ = columns
 
     def _clone(self, clonespace: dict) -> "Frame":
         return Frame(
@@ -107,20 +113,12 @@ class QAFrameMeta(type(ABC), type):
         "__constraints__",
         "__columns__",
         "__cache__",
-        "read",
-        "__partition__",
     ]
 
     @staticmethod
     def _foramt(name, namespace):
-        if "read" not in namespace:
-            raise ValueError(f"Please implement {name} class methods 'read'")
-        elif not isinstance(namespace["read"], classmethod):
-            raise TypeError(f"class {name} 'read' attribute is not classmethod type")
         if name in QAFrameMeta.__frame_set__:
             raise SyntaxError(f"class {name} duplicate definition")
-        if "__partition__" not in namespace:
-            namespace["__partition__"] = DefaultPartition()
         __annotations__ = namespace.get("__annotations__", dict())
         namespace["__constraints__"] = namespace.get("__constraints__", list())
         namespace["__cache__"] = dict()
@@ -137,9 +135,6 @@ class QAFrameMeta(type(ABC), type):
                 raise ValueError(
                     "field '__columns__' is to retain key fields, users are not defined"
                 )
-            elif field == "__partition__":
-                if not isinstance(value, Partition):
-                    raise TypeError(f"__partition__ field must be of type Partition")
             if field in __annotations__:
                 if not isinstance(value, lionqa.Column):
                     raise TypeError(
@@ -163,30 +158,41 @@ class QAFrameMeta(type(ABC), type):
 
 class QAFrame(Frame, ABC, metaclass=QAFrameMeta):
     """用户自定义待检测数据帧接口"""
+    # TODO: 加入constraints检查
 
     @classmethod
     @abstractmethod
-    def read(cls, *args, **kwargs) -> pd.DataFrame:
+    def read(cls, index: Optional[Union[dt.date, dt.datetime, str]]) -> pd.DataFrame:
         raise NotImplementedError()
 
     @classmethod
-    def __read__(cls, partition: Optional[Any] = None) -> pd.DataFrame:
-        if partition not in cls.__cache__:
-            return cls.read(partition)
-        return cls.__cache__[partition]
+    @abstractmethod
+    def read_offset(cls, anchor: Optional[Union[dt.date, dt.datetime, str]], offset: int) -> pd.DataFrame:
+        raise NotImplementedError()
 
-    def __init__(self, index: Optional[Any] = None) -> None:
-        self.partition, self.is_offset = self.__class__.__partition__[index]
-        if not self.is_offset:
-            columns = list()
-            for col in self.__class__.__columns__:
-                col = getattr(self.__class__, col).clone()
-                col.unbind()
-                columns.append(col)
-            super().__init__(
-                func=self.__class__.__read__,
-                pre=(make(self.partition),),
-                columns=columns,
-            )
+    def __read__(self):
+        if self.is_offset:
+            return self.__class__.read_offset(self.anchor, self.index_or_offset)
         else:
-            super().__init__()
+            return self.__class__.read(self.index_or_offset)
+
+    def __init__(self, index_or_offset: Optional[Union[int, dt.datetime, dt.date, str]] = None) -> None:
+        self.is_offset = isinstance(index_or_offset, int)
+        self.index_or_offset = index_or_offset
+        self.anchor = None
+        columns = list()
+        for col in self.__class__.__columns__:
+            col = getattr(self.__class__, col).clone()
+            col.unbind()
+            columns.append(col)
+        super().__init__(
+            func=self.__read__,
+            columns=columns,
+        )
+
+    def check(self):
+        for cons in self.__class__.__constraints__:
+            assert cons(self).collect()
+        for column in self.__columns__:
+            for cons in column.constraints:
+                assert cons(self).check()
